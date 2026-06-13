@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useEffect, useState } from 'react'
 import { type ColumnDef } from '@tanstack/react-table'
 import { useTranslation } from 'react-i18next'
 import { formatQuota, formatTimestampToDate } from '@/lib/format'
@@ -28,6 +29,7 @@ import {
 import { MaskedValueDisplay } from '@/components/masked-value-display'
 import { StatusBadge } from '@/components/status-badge'
 import { TableId } from '@/components/table-id'
+import { getAdminPlans } from '@/features/subscriptions/api'
 import { REDEMPTION_FILTER_EXPIRED, REDEMPTION_STATUSES } from '../constants'
 import { isRedemptionExpired, isTimestampExpired } from '../lib'
 import { type Redemption } from '../types'
@@ -35,6 +37,21 @@ import { DataTableRowActions } from './data-table-row-actions'
 
 export function useRedemptionsColumns(): ColumnDef<Redemption>[] {
   const { t } = useTranslation()
+  const [planTitleMap, setPlanTitleMap] = useState<Record<number, string>>({})
+
+  useEffect(() => {
+    getAdminPlans()
+      .then((result) => {
+        if (!result.success || !result.data) return
+        setPlanTitleMap(
+          Object.fromEntries(
+            result.data.map((record) => [record.plan.id, record.plan.title])
+          )
+        )
+      })
+      .catch(() => setPlanTitleMap({}))
+  }, [])
+
   return [
     {
       id: 'select',
@@ -135,6 +152,22 @@ export function useRedemptionsColumns(): ColumnDef<Redemption>[] {
       size: 120,
     },
     {
+      accessorKey: 'type',
+      header: t('Type'),
+      cell: ({ row }) => {
+        const type = row.original.type || 'quota'
+        return (
+          <StatusBadge
+            label={type === 'subscription' ? t('Subscription') : t('Quota')}
+            variant='neutral'
+            copyable={false}
+            className='-ml-1.5'
+          />
+        )
+      },
+      size: 120,
+    },
+    {
       id: 'code',
       accessorKey: 'key',
       header: t('Code'),
@@ -158,8 +191,25 @@ export function useRedemptionsColumns(): ColumnDef<Redemption>[] {
     },
     {
       accessorKey: 'quota',
-      header: t('Quota'),
+      header: t('Benefit'),
       cell: ({ row }) => {
+        const redemption = row.original
+        if ((redemption.type || 'quota') === 'subscription') {
+          const planId = redemption.subscription_plan_id || 0
+          const planTitle = planTitleMap[planId]
+          return (
+            <StatusBadge
+              label={
+                planTitle
+                  ? `${planTitle} (#${planId})`
+                  : t('Subscription Plan #{{id}}', { id: planId })
+              }
+              variant='neutral'
+              copyable={false}
+              className='-ml-1.5'
+            />
+          )
+        }
         const quota = row.getValue('quota') as number
         return (
           <StatusBadge

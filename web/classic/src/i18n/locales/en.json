@@ -2925,7 +2925,7 @@
     "订单支付方式": "Order Payment Method",
     "订阅": "Subscription",
     "订阅剩余": "Subscription Remaining",
-    "订阅套餐": "Subscription Plans",
+    "订阅套餐": "Subscription plan",
     "订阅套餐管理": "Subscription Plan Management",
     "订阅实例": "Subscription Instance",
     "订阅抵扣": "Subscription deduction",
@@ -3821,6 +3821,12 @@
     "并确认自行承担部署": "confirm that I bear legal responsibility arising from deployment",
     "运营和收费行为产生的法律责任": "operation and charging behavior",
     "，": ", ",
-    "、": ", "
+    "、": ", ",
+    "订阅兑换码": "Subscription redemption code",
+    "兑换码类型": "Redemption code type",
+    "权益设置": "Benefit settings",
+    "设置兑换码的权益和数量": "Set redemption code benefits and quantity",
+    "权益": "Benefit",
+    "成功兑换订阅：": "Subscription redeemed successfully: "
   }
 }

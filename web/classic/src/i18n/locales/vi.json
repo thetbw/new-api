@@ -4209,6 +4209,12 @@
     "并确认自行承担部署": "confirm that I bear legal responsibility arising from deployment",
     "运营和收费行为产生的法律责任": "operation and charging behavior",
     "，": ", ",
-    "、": ", "
+    "、": ", ",
+    "订阅兑换码": "Mã đổi gói đăng ký",
+    "兑换码类型": "Loại mã đổi thưởng",
+    "权益设置": "Thiết lập quyền lợi",
+    "设置兑换码的权益和数量": "Thiết lập quyền lợi và số lượng mã đổi thưởng",
+    "权益": "Quyền lợi",
+    "成功兑换订阅：": "Đổi gói đăng ký thành công: "
   }
 }

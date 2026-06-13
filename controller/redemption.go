@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"unicode/utf8"
@@ -72,32 +73,21 @@ func AddRedemption(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	if utf8.RuneCountInString(redemption.Name) == 0 || utf8.RuneCountInString(redemption.Name) > 20 {
-		common.ApiErrorI18n(c, i18n.MsgRedemptionNameLength)
-		return
-	}
-	if redemption.Count <= 0 {
-		common.ApiErrorI18n(c, i18n.MsgRedemptionCountPositive)
-		return
-	}
-	if redemption.Count > 100 {
-		common.ApiErrorI18n(c, i18n.MsgRedemptionCountMax)
-		return
-	}
-	if valid, msg := validateExpiredTime(c, redemption.ExpiredTime); !valid {
-		c.JSON(http.StatusOK, gin.H{"success": false, "message": msg})
+	if !validateRedemptionPayload(c, &redemption, true) {
 		return
 	}
 	var keys []string
 	for i := 0; i < redemption.Count; i++ {
 		key := common.GetUUID()
 		cleanRedemption := model.Redemption{
-			UserId:      c.GetInt("id"),
-			Name:        redemption.Name,
-			Key:         key,
-			CreatedTime: common.GetTimestamp(),
-			Quota:       redemption.Quota,
-			ExpiredTime: redemption.ExpiredTime,
+			UserId:             c.GetInt("id"),
+			Name:               redemption.Name,
+			Key:                key,
+			CreatedTime:        common.GetTimestamp(),
+			Quota:              redemption.Quota,
+			Type:               redemption.Type,
+			SubscriptionPlanId: redemption.SubscriptionPlanId,
+			ExpiredTime:        redemption.ExpiredTime,
 		}
 		err = cleanRedemption.Insert()
 		if err != nil {
@@ -112,9 +102,11 @@ func AddRedemption(c *gin.Context) {
 		keys = append(keys, key)
 	}
 	recordManageAudit(c, "redemption.create", map[string]interface{}{
-		"name":  redemption.Name,
-		"count": redemption.Count,
-		"quota": logger.LogQuota(redemption.Quota),
+		"name":                 redemption.Name,
+		"count":                redemption.Count,
+		"quota":                logger.LogQuota(redemption.Quota),
+		"type":                 redemption.Type,
+		"subscription_plan_id": redemption.SubscriptionPlanId,
 	})
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -152,13 +144,14 @@ func UpdateRedemption(c *gin.Context) {
 		return
 	}
 	if statusOnly == "" {
-		if valid, msg := validateExpiredTime(c, redemption.ExpiredTime); !valid {
-			c.JSON(http.StatusOK, gin.H{"success": false, "message": msg})
+		if !validateRedemptionPayload(c, &redemption, false) {
 			return
 		}
 		// If you add more fields, please also update redemption.Update()
 		cleanRedemption.Name = redemption.Name
 		cleanRedemption.Quota = redemption.Quota
+		cleanRedemption.Type = redemption.Type
+		cleanRedemption.SubscriptionPlanId = redemption.SubscriptionPlanId
 		cleanRedemption.ExpiredTime = redemption.ExpiredTime
 	}
 	if statusOnly != "" {
@@ -196,4 +189,45 @@ func validateExpiredTime(c *gin.Context, expired int64) (bool, string) {
 		return false, i18n.T(c, i18n.MsgRedemptionExpireTimeInvalid)
 	}
 	return true, ""
+}
+
+func validateRedemptionPayload(c *gin.Context, redemption *model.Redemption, validateCount bool) bool {
+	if utf8.RuneCountInString(redemption.Name) == 0 || utf8.RuneCountInString(redemption.Name) > 20 {
+		common.ApiErrorI18n(c, i18n.MsgRedemptionNameLength)
+		return false
+	}
+	if validateCount {
+		if redemption.Count <= 0 {
+			common.ApiErrorI18n(c, i18n.MsgRedemptionCountPositive)
+			return false
+		}
+		if redemption.Count > 100 {
+			common.ApiErrorI18n(c, i18n.MsgRedemptionCountMax)
+			return false
+		}
+	}
+	if valid, msg := validateExpiredTime(c, redemption.ExpiredTime); !valid {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": msg})
+		return false
+	}
+	redemption.Type = model.NormalizeRedemptionType(redemption.Type)
+	switch redemption.Type {
+	case model.RedemptionTypeSubscription:
+		if redemption.SubscriptionPlanId <= 0 {
+			common.ApiError(c, errors.New("subscription_plan_id 不能为空"))
+			return false
+		}
+		if _, err := model.GetSubscriptionPlanById(redemption.SubscriptionPlanId); err != nil {
+			common.ApiError(c, errors.New("订阅套餐不存在"))
+			return false
+		}
+		redemption.Quota = 0
+	default:
+		if redemption.Quota < 0 {
+			common.ApiError(c, errors.New("quota 不能为负数"))
+			return false
+		}
+		redemption.SubscriptionPlanId = 0
+	}
+	return true
 }

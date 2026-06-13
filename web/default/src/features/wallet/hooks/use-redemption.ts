@@ -41,7 +41,24 @@ export function useRedemption() {
       const response = await redeemTopupCode({ key: code })
 
       if (response.success && response.data) {
-        const quotaAdded = response.data
+        if (
+          typeof response.data === 'object' &&
+          response.data.type === 'subscription'
+        ) {
+          toast.success(
+            i18next.t('Redemption successful! Subscription activated: {{plan}}', {
+              plan: response.data.plan_title || response.data.subscription_plan_id,
+            })
+          )
+          await getSelf()
+          return true
+        }
+        const quotaAdded =
+          typeof response.data === 'number'
+            ? response.data
+            : response.data.type === 'quota'
+              ? response.data.quota
+              : 0
         toast.success(
           i18next.t('Redemption successful! Added: {{quota}}', {
             quota: formatQuota(quotaAdded),

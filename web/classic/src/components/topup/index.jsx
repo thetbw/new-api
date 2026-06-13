@@ -177,15 +177,27 @@ const TopUp = () => {
       const { success, message, data } = res.data;
       if (success) {
         showSuccess(t('兑换成功！'));
+        const isSubscription =
+          data && typeof data === 'object' && data.type === 'subscription';
+        const quotaAdded =
+          typeof data === 'number'
+            ? data
+            : data && data.type === 'quota'
+              ? data.quota
+              : 0;
         Modal.success({
           title: t('兑换成功！'),
-          content: t('成功兑换额度：') + renderQuota(data),
+          content: isSubscription
+            ? `${t('成功兑换订阅：')}${data.plan_title || `#${data.subscription_plan_id}`}`
+            : t('成功兑换额度：') + renderQuota(quotaAdded),
           centered: true,
         });
-        if (userState.user) {
+        if (isSubscription) {
+          void Promise.allSettled([getUserQuota(), getSubscriptionSelf()]);
+        } else if (userState.user) {
           const updatedUser = {
             ...userState.user,
-            quota: userState.user.quota + data,
+            quota: userState.user.quota + quotaAdded,
           };
           userDispatch({ type: 'login', payload: updatedUser });
         }
