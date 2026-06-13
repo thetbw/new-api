@@ -34,7 +34,6 @@ import {
 import { useIsMobile } from '../../../../hooks/common/useIsMobile';
 import {
   Button,
-  Modal,
   SideSheet,
   Space,
   Spin,
@@ -201,18 +200,7 @@ const EditRedemptionModal = (props) => {
       for (let i = 0; i < data.length; i++) {
         text += data[i] + '\n';
       }
-      Modal.confirm({
-        title: t('兑换码创建成功'),
-        content: (
-          <div>
-            <p>{t('兑换码创建成功，是否下载兑换码？')}</p>
-            <p>{t('兑换码将以文本文件的形式下载，文件名为兑换码的名称。')}</p>
-          </div>
-        ),
-        onOk: () => {
-          downloadTextAsFile(text, `${localInputs.name}.txt`);
-        },
-      });
+      downloadTextAsFile(text, `${localInputs.name}.txt`);
     }
     setLoading(false);
   };

@@ -43,3 +43,29 @@ export function isRedemptionExpired(
 ): boolean {
   return status === 1 && isTimestampExpired(expired_time)
 }
+
+export function downloadRedemptionCodes(
+  codes: string[],
+  filename: string
+): void {
+  if (codes.length === 0) return
+
+  const safeFilename =
+    filename
+      .trim()
+      .replace(/[\\/:*?"<>|]/g, '_')
+      .replace(/\s+/g, ' ') || 'redemption-codes'
+  const blob = new Blob([`${codes.join('\n')}\n`], {
+    type: 'text/plain;charset=utf-8',
+  })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+
+  anchor.href = url
+  anchor.download = `${safeFilename}.txt`
+  anchor.style.display = 'none'
+  document.body.appendChild(anchor)
+  anchor.click()
+  document.body.removeChild(anchor)
+  URL.revokeObjectURL(url)
+}

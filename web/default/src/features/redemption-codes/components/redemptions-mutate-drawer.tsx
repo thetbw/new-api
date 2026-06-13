@@ -67,6 +67,7 @@ import {
   getRedemptionFormSchema,
   type RedemptionFormValues,
   REDEMPTION_FORM_DEFAULT_VALUES,
+  downloadRedemptionCodes,
   transformFormDataToPayload,
   transformRedemptionToFormDefaults,
 } from '../lib'
@@ -143,6 +144,9 @@ export function RedemptionsMutateDrawer({
         const result = await createRedemption(basePayload)
         if (result.success) {
           const count = result.data?.length || 0
+          if (result.data && result.data.length > 0) {
+            downloadRedemptionCodes(result.data, basePayload.name)
+          }
           toast.success(
             count > 1
               ? t('Successfully created {{count}} redemption codes', {
@@ -238,7 +242,9 @@ export function RedemptionsMutateDrawer({
                       }}
                     >
                       <SelectTrigger className='w-full'>
-                        <SelectValue placeholder={t('Select redemption type')} />
+                        <SelectValue
+                          placeholder={t('Select redemption type')}
+                        />
                       </SelectTrigger>
                       <SelectContent alignItemWithTrigger={false}>
                         <SelectGroup>
@@ -269,7 +275,9 @@ export function RedemptionsMutateDrawer({
                       <Select
                         value={field.value ? String(field.value) : ''}
                         onValueChange={(value) =>
-                          field.onChange(parseInt(value, 10) || undefined)
+                          field.onChange(
+                            value ? parseInt(value, 10) || undefined : undefined
+                          )
                         }
                       >
                         <SelectTrigger className='w-full'>
