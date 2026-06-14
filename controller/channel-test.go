@@ -893,6 +893,32 @@ func TestChannel(c *gin.Context) {
 var testAllChannelsLock sync.Mutex
 var testAllChannelsRunning bool = false
 
+type automaticChannelTestDecision struct {
+	notifyUnavailable bool
+	disable           bool
+	enable            bool
+}
+
+func evaluateAutomaticChannelTest(status int, autoBan bool, newAPIError *types.NewAPIError, milliseconds int64, disableThreshold int64) (automaticChannelTestDecision, *types.NewAPIError) {
+	isChannelEnabled := status == common.ChannelStatusEnabled
+	shouldBanChannel := false
+	if newAPIError != nil {
+		shouldBanChannel = service.ShouldDisableChannel(newAPIError)
+	}
+
+	if common.AutomaticDisableChannelEnabled && !shouldBanChannel && milliseconds > disableThreshold {
+		err := fmt.Errorf("响应时间 %.2fs 超过阈值 %.2fs", float64(milliseconds)/1000.0, float64(disableThreshold)/1000.0)
+		newAPIError = types.NewOpenAIError(err, types.ErrorCodeChannelResponseTimeExceeded, http.StatusRequestTimeout)
+		shouldBanChannel = true
+	}
+
+	return automaticChannelTestDecision{
+		notifyUnavailable: isChannelEnabled && newAPIError != nil,
+		disable:           isChannelEnabled && shouldBanChannel && autoBan,
+		enable:            !isChannelEnabled && service.ShouldEnableChannel(newAPIError, status),
+	}, newAPIError
+}
+
 func testAllChannels(notify bool) error {
 	testUserID, err := resolveChannelTestUserID(nil)
 	if err != nil {
@@ -926,35 +952,23 @@ func testAllChannels(notify bool) error {
 			if channel.Status == common.ChannelStatusManuallyDisabled {
 				continue
 			}
-			isChannelEnabled := channel.Status == common.ChannelStatusEnabled
 			tik := time.Now()
 			result := testChannel(channel, testUserID, "", "", shouldUseStreamForAutomaticChannelTest(channel))
 			tok := time.Now()
 			milliseconds := tok.Sub(tik).Milliseconds()
 
-			shouldBanChannel := false
-			newAPIError := result.newAPIError
-			// request error disables the channel
-			if newAPIError != nil {
-				shouldBanChannel = service.ShouldDisableChannel(result.newAPIError)
-			}
-
-			// 当错误检查通过，才检查响应时间
-			if common.AutomaticDisableChannelEnabled && !shouldBanChannel {
-				if milliseconds > disableThreshold {
-					err := fmt.Errorf("响应时间 %.2fs 超过阈值 %.2fs", float64(milliseconds)/1000.0, float64(disableThreshold)/1000.0)
-					newAPIError = types.NewOpenAIError(err, types.ErrorCodeChannelResponseTimeExceeded, http.StatusRequestTimeout)
-					shouldBanChannel = true
-				}
+			decision, newAPIError := evaluateAutomaticChannelTest(channel.Status, channel.GetAutoBan(), result.newAPIError, milliseconds, disableThreshold)
+			if decision.notifyUnavailable {
+				service.NotifyChannelUnavailable(channel.Id, channel.Name, newAPIError.ErrorWithStatusCode())
 			}
 
 			// disable channel
-			if isChannelEnabled && shouldBanChannel && channel.GetAutoBan() {
-				processChannelError(result.context, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(result.context, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError)
+			if decision.disable {
+				service.DisableChannelWithoutNotify(*types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(result.context, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError.ErrorWithStatusCode())
 			}
 
 			// enable channel
-			if !isChannelEnabled && service.ShouldEnableChannel(newAPIError, channel.Status) {
+			if decision.enable {
 				service.EnableChannel(channel.Id, common.GetContextKeyString(result.context, constant.ContextKeyChannelKey), channel.Name)
 			}
 

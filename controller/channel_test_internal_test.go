@@ -1,6 +1,8 @@
 package controller
 
 import (
+	"errors"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 
@@ -8,6 +10,7 @@ import (
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -79,4 +82,93 @@ func TestResolveChannelTestUserIDUsesRequestUser(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, 2, userID)
+}
+
+func TestEvaluateAutomaticChannelTest(t *testing.T) {
+	originalAutoDisable := common.AutomaticDisableChannelEnabled
+	originalAutoEnable := common.AutomaticEnableChannelEnabled
+	originalDisableRanges := operation_setting.AutomaticDisableStatusCodeRanges
+	t.Cleanup(func() {
+		common.AutomaticDisableChannelEnabled = originalAutoDisable
+		common.AutomaticEnableChannelEnabled = originalAutoEnable
+		operation_setting.AutomaticDisableStatusCodeRanges = originalDisableRanges
+	})
+
+	operation_setting.AutomaticDisableStatusCodeRanges = []operation_setting.StatusCodeRange{{Start: http.StatusUnauthorized, End: http.StatusUnauthorized}}
+	disableThreshold := int64(100_000)
+	channelError := func() *types.NewAPIError {
+		return types.NewOpenAIError(errors.New("unauthorized"), types.ErrorCodeBadResponseStatusCode, http.StatusUnauthorized)
+	}
+
+	t.Run("enabled channel notifies even when channel auto ban is disabled", func(t *testing.T) {
+		common.AutomaticDisableChannelEnabled = true
+		common.AutomaticEnableChannelEnabled = false
+
+		decision, effectiveErr := evaluateAutomaticChannelTest(common.ChannelStatusEnabled, false, channelError(), 100, disableThreshold)
+
+		require.NotNil(t, effectiveErr)
+		require.True(t, decision.notifyUnavailable)
+		require.False(t, decision.disable)
+		require.False(t, decision.enable)
+	})
+
+	t.Run("enabled channel notifies even when global automatic disable is disabled", func(t *testing.T) {
+		common.AutomaticDisableChannelEnabled = false
+		common.AutomaticEnableChannelEnabled = false
+
+		decision, effectiveErr := evaluateAutomaticChannelTest(common.ChannelStatusEnabled, true, channelError(), 100, disableThreshold)
+
+		require.NotNil(t, effectiveErr)
+		require.True(t, decision.notifyUnavailable)
+		require.False(t, decision.disable)
+		require.False(t, decision.enable)
+	})
+
+	t.Run("enabled channel disables when automatic disable matches and auto ban is enabled", func(t *testing.T) {
+		common.AutomaticDisableChannelEnabled = true
+		common.AutomaticEnableChannelEnabled = false
+
+		decision, effectiveErr := evaluateAutomaticChannelTest(common.ChannelStatusEnabled, true, channelError(), 100, disableThreshold)
+
+		require.NotNil(t, effectiveErr)
+		require.True(t, decision.notifyUnavailable)
+		require.True(t, decision.disable)
+		require.False(t, decision.enable)
+	})
+
+	t.Run("enabled channel timeout notifies and disables", func(t *testing.T) {
+		common.AutomaticDisableChannelEnabled = true
+		common.AutomaticEnableChannelEnabled = false
+
+		decision, effectiveErr := evaluateAutomaticChannelTest(common.ChannelStatusEnabled, true, nil, disableThreshold+1, disableThreshold)
+
+		require.NotNil(t, effectiveErr)
+		require.True(t, decision.notifyUnavailable)
+		require.True(t, decision.disable)
+		require.False(t, decision.enable)
+	})
+
+	t.Run("closed channel failure does not notify", func(t *testing.T) {
+		common.AutomaticDisableChannelEnabled = true
+		common.AutomaticEnableChannelEnabled = false
+
+		decision, effectiveErr := evaluateAutomaticChannelTest(common.ChannelStatusAutoDisabled, true, channelError(), 100, disableThreshold)
+
+		require.NotNil(t, effectiveErr)
+		require.False(t, decision.notifyUnavailable)
+		require.False(t, decision.disable)
+		require.False(t, decision.enable)
+	})
+
+	t.Run("auto disabled channel success can enable", func(t *testing.T) {
+		common.AutomaticDisableChannelEnabled = true
+		common.AutomaticEnableChannelEnabled = true
+
+		decision, effectiveErr := evaluateAutomaticChannelTest(common.ChannelStatusAutoDisabled, true, nil, 100, disableThreshold)
+
+		require.Nil(t, effectiveErr)
+		require.False(t, decision.notifyUnavailable)
+		require.False(t, decision.disable)
+		require.True(t, decision.enable)
+	})
 }
